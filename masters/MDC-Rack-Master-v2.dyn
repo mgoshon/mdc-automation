@@ -1,0 +1,157 @@
+{
+  "Uuid": "baa5d9a5-716a-432c-a194-99bc41de8d7d",
+  "IsCustomNode": false,
+  "Description": "",
+  "Name": "MDC-Rack-Master-v2",
+  "ElementResolver": {
+    "ResolutionMap": {}
+  },
+  "Inputs": [],
+  "Outputs": [],
+  "Nodes": [
+    {
+      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
+      "NodeType": "PythonScriptNode",
+      "Code": "# MDC Family Builder v1: Telecom rack / cabinet master\r\n# Run in Dynamo (CPython3) inside a FRESH family from English-Imperial\\Generic Model.rft, Revit 2023+.\r\n# Builds: category, parameters, reference planes, labeled + EQ dimensions, 15 locked extrusions,\r\n# visibility wiring, Clearance subcategory, power connector, then an automatic flex test.\r\n# One Dynamo run = one undo step in Revit (Ctrl+Z removes everything it built).\r\nimport clr, os\r\nclr.AddReference(\"RevitAPI\")\r\nfrom Autodesk.Revit.DB import *\r\nfrom Autodesk.Revit.DB.Electrical import ElectricalSystemType\r\nclr.AddReference(\"RevitServices\")\r\nfrom RevitServices.Persistence import DocumentManager\r\nfrom RevitServices.Transactions import TransactionManager\r\nfrom System import Guid, Convert\r\n\r\ndoc = DocumentManager.Instance.CurrentDBDocument\r\napp = DocumentManager.Instance.CurrentUIApplication.Application\r\nlog = []\r\n\r\n# ---------------------------------------------------------------- recipe\r\nIN_ = lambda v: v / 12.0  # inches -> feet\r\n\r\nDEFAULTS = {\"Rack Units\": 42, \"Frame Allowance\": IN_(4), \"Width\": 2.0, \"Depth\": 3.5,\r\n            \"Post Size\": IN_(2), \"Manager Width\": 0.5, \"Front Clearance\": 3.0, \"Rear Clearance\": 3.0}\r\nFLEX = {\"Rack Units\": 45, \"Frame Allowance\": IN_(4), \"Width\": 2.5, \"Depth\": 4.0,\r\n        \"Post Size\": IN_(4), \"Manager Width\": IN_(10), \"Front Clearance\": 3.5, \"Rear Clearance\": 2.5}\r\n\r\ndef height(v): return (v[\"Rack Units\"] * 1.75) / 12.0 + v[\"Frame Allowance\"]\r\n\r\n# name, axis (x = constant X, y = constant Y, z = constant Z), position from values, Is Reference\r\nPLANES = [\r\n    (\"Left\",                \"x\", lambda v: -v[\"Width\"] / 2, \"Left\"),\r\n    (\"Right\",               \"x\", lambda v:  v[\"Width\"] / 2, \"Right\"),\r\n    (\"Back\",                \"y\", lambda v:  v[\"Depth\"], \"Back\"),\r\n    (\"Front Clearance\",     \"y\", lambda v: -v[\"Front Clearance\"], \"NotAReference\"),\r\n    (\"Rear Clearance\",      \"y\", lambda v:  v[\"Depth\"] + v[\"Rear Clearance\"], \"NotAReference\"),\r\n    (\"Left Post\",           \"x\", lambda v: -v[\"Width\"] / 2 + v[\"Post Size\"], \"NotAReference\"),\r\n    (\"Right Post\",          \"x\", lambda v:  v[\"Width\"] / 2 - v[\"Post Size\"], \"NotAReference\"),\r\n    (\"Front Post\",          \"y\", lambda v:  v[\"Post Size\"], \"NotAReference\"),\r\n    (\"Back Post\",           \"y\", lambda v:  v[\"Depth\"] - v[\"Post Size\"], \"NotAReference\"),\r\n    (\"Mid Depth\",           \"y\", lambda v:  v[\"Depth\"] / 2, \"NotAReference\"),\r\n    (\"Upright Front\",       \"y\", lambda v:  v[\"Depth\"] / 2 - v[\"Post Size\"] / 2, \"NotAReference\"),\r\n    (\"Upright Back\",        \"y\", lambda v:  v[\"Depth\"] / 2 + v[\"Post Size\"] / 2, \"NotAReference\"),\r\n    (\"Left Manager Outer\",  \"x\", lambda v: -v[\"Width\"] / 2 - v[\"Manager Width\"], \"NotAReference\"),\r\n    (\"Right Manager Outer\", \"x\", lambda v:  v[\"Width\"] / 2 + v[\"Manager Width\"], \"NotAReference\"),\r\n    (\"Top\",                 \"z\", height, \"Top\"),\r\n]\r\n\r\n# view, planes (in order), axis, line offset (ft), label, EQ\r\nd = DEFAULTS\r\nOX = d[\"Width\"] / 2 + d[\"Manager Width\"]\r\nDIMS = [\r\n    (\"plan\",  [\"Left\", \"Center (Left/Right)\", \"Right\"], \"x\", d[\"Depth\"] + d[\"Rear Clearance\"] + 0.5, None, True),\r\n    (\"plan\",  [\"Left\", \"Right\"], \"x\", d[\"Depth\"] + d[\"Rear Clearance\"] + 1.0, \"Width\", False),\r\n    (\"plan\",  [\"Center (Front/Back)\", \"Back\"], \"y\", -OX - 1.0, \"Depth\", False),\r\n    (\"plan\",  [\"Front Clearance\", \"Center (Front/Back)\"], \"y\", -OX - 1.75, \"Front Clearance\", False),\r\n    (\"plan\",  [\"Back\", \"Rear Clearance\"], \"y\", -OX - 1.75, \"Rear Clearance\", False),\r\n    (\"plan\",  [\"Left\", \"Left Post\"], \"x\", -d[\"Front Clearance\"] - 0.5, \"Post Size\", False),\r\n    (\"plan\",  [\"Right Post\", \"Right\"], \"x\", -d[\"Front Clearance\"] - 0.5, \"Post Size\", False),\r\n    (\"plan\",  [\"Center (Front/Back)\", \"Front Post\"], \"y\", OX + 0.75, \"Post Size\", False),\r\n    (\"plan\",  [\"Back Post\", \"Back\"], \"y\", OX + 0.75, \"Post Size\", False),\r\n    (\"plan\",  [\"Center (Front/Back)\", \"Mid Depth\", \"Back\"], \"y\", OX + 1.5, None, True),\r\n    (\"plan\",  [\"Upright Front\", \"Mid Depth\", \"Upright Back\"], \"y\", OX + 2.25, None, True),\r\n    (\"plan\",  [\"Upright Front\", \"Upright Back\"], \"y\", OX + 3.0, \"Post Size\", False),\r\n    (\"plan\",  [\"Left Manager Outer\", \"Left\"], \"x\", -d[\"Front Clearance\"] - 1.0, \"Manager Width\", False),\r\n    (\"plan\",  [\"Right\", \"Right Manager Outer\"], \"x\", -d[\"Front Clearance\"] - 1.0, \"Manager Width\", False),\r\n    (\"front\", [\"Ref. Level\", \"Top\"], \"z\", -OX - 1.0, \"Height\", False),\r\n]\r\n\r\n# name, left, right, front, back, extrusion-end parameter, visibility parameter, subcategory\r\nBOXES = [\r\n    (\"Cabinet Body\", \"Left\", \"Right\", \"Front Post\", \"Back Post\", \"Height\", \"Is Cabinet\", None),\r\n    (\"Front Door\", \"Left\", \"Right\", \"Center (Front/Back)\", \"Front Post\", \"Height\", \"Front Door Visible\", None),\r\n    (\"Rear Door\", \"Left\", \"Right\", \"Back Post\", \"Back\", \"Height\", \"Rear Door Visible\", None),\r\n    (\"Post FL\", \"Left\", \"Left Post\", \"Center (Front/Back)\", \"Front Post\", \"Height\", \"Is 4 Post\", None),\r\n    (\"Post FR\", \"Right Post\", \"Right\", \"Center (Front/Back)\", \"Front Post\", \"Height\", \"Is 4 Post\", None),\r\n    (\"Post BL\", \"Left\", \"Left Post\", \"Back Post\", \"Back\", \"Height\", \"Is 4 Post\", None),\r\n    (\"Post BR\", \"Right Post\", \"Right\", \"Back Post\", \"Back\", \"Height\", \"Is 4 Post\", None),\r\n    (\"Upright L\", \"Left\", \"Left Post\", \"Upright Front\", \"Upright Back\", \"Height\", \"Is 2 Post\", None),\r\n    (\"Upright R\", \"Right Post\", \"Right\", \"Upright Front\", \"Upright Back\", \"Height\", \"Is 2 Post\", None),\r\n    (\"Foot L\", \"Left\", \"Left Post\", \"Center (Front/Back)\", \"Back\", \"Post Size\", \"Is 2 Post\", None),\r\n    (\"Foot R\", \"Right Post\", \"Right\", \"Center (Front/Back)\", \"Back\", \"Post Size\", \"Is 2 Post\", None),\r\n    (\"Manager L\", \"Left Manager Outer\", \"Left\", \"Center (Front/Back)\", \"Back\", \"Height\", \"Left Manager\", None),\r\n    (\"Manager R\", \"Right\", \"Right Manager Outer\", \"Center (Front/Back)\", \"Back\", \"Height\", \"Right Manager\", None),\r\n    (\"Front Clearance Zone\", \"Left\", \"Right\", \"Front Clearance\", \"Center (Front/Back)\", \"Height\", \"Show Clearance\", \"Clearance\"),\r\n    (\"Rear Clearance Zone\", \"Left\", \"Right\", \"Back\", \"Rear Clearance\", \"Height\", \"Show Clearance\", \"Clearance\"),\r\n]\r\n\r\n# ---------------------------------------------------------------- parameters\r\ndef params_spec():\r\n    inch = lambda v: UnitUtils.ConvertToInternalUnits(v, UnitTypeId.Inches)\r\n    volts = lambda v: UnitUtils.ConvertToInternalUnits(v, UnitTypeId.Volts)\r\n    va = lambda v: UnitUtils.ConvertToInternalUnits(v, UnitTypeId.VoltAmperes)\r\n    G = \"3f2b8c1e-5a47-4d6b-9e21-7c0a4b8d1e\"\r\n    shared = [\r\n        (\"Rack Units\", SpecTypeId.Int.Integer, GroupTypeId.Geometry, G + \"01\", 42),\r\n        (\"Height\", SpecTypeId.Length, GroupTypeId.Geometry, G + \"02\", None),\r\n        (\"Width\", SpecTypeId.Length, GroupTypeId.Geometry, G + \"03\", inch(24)),\r\n        (\"Depth\", SpecTypeId.Length, GroupTypeId.Geometry, G + \"04\", inch(42)),\r\n        (\"Manager Width\", SpecTypeId.Length, GroupTypeId.Geometry, G + \"05\", inch(6)),\r\n        (\"Front Clearance\", SpecTypeId.Length, GroupTypeId.Geometry, G + \"06\", inch(36)),\r\n        (\"Rear Clearance\", SpecTypeId.Length, GroupTypeId.Geometry, G + \"07\", inch(36)),\r\n        (\"Voltage\", SpecTypeId.ElectricalPotential, GroupTypeId.Electrical, G + \"08\", volts(120)),\r\n        (\"Number of Poles\", SpecTypeId.Int.NumberOfPoles, GroupTypeId.Electrical, G + \"11\", 1),\r\n        (\"Apparent Load\", SpecTypeId.ApparentPower, GroupTypeId.Electrical, G + \"10\", va(5000)),\r\n    ]\r\n    family = [\r\n        (\"Frame Allowance\", SpecTypeId.Length, GroupTypeId.Geometry, inch(4)),\r\n        (\"Post Size\", SpecTypeId.Length, GroupTypeId.Geometry, inch(2)),\r\n        (\"Is 2 Post\", SpecTypeId.Boolean.YesNo, GroupTypeId.Constraints, 0),\r\n        (\"Is 4 Post\", SpecTypeId.Boolean.YesNo, GroupTypeId.Constraints, 0),\r\n        (\"Is Cabinet\", SpecTypeId.Boolean.YesNo, GroupTypeId.Constraints, 1),\r\n        (\"Front Door\", SpecTypeId.Boolean.YesNo, GroupTypeId.Constraints, 1),\r\n        (\"Rear Door\", SpecTypeId.Boolean.YesNo, GroupTypeId.Constraints, 1),\r\n        (\"Left Manager\", SpecTypeId.Boolean.YesNo, GroupTypeId.Constraints, 0),\r\n        (\"Right Manager\", SpecTypeId.Boolean.YesNo, GroupTypeId.Constraints, 0),\r\n        (\"Show Clearance\", SpecTypeId.Boolean.YesNo, GroupTypeId.Visibility, 1),\r\n        (\"Front Door Visible\", SpecTypeId.Boolean.YesNo, GroupTypeId.Visibility, None),\r\n        (\"Rear Door Visible\", SpecTypeId.Boolean.YesNo, GroupTypeId.Visibility, None),\r\n    ]\r\n    formulas = [(\"Height\", 'Rack Units * 1.75\" + Frame Allowance'),\r\n                (\"Front Door Visible\", \"and(Is Cabinet, Front Door)\"),\r\n                (\"Rear Door Visible\", \"and(Is Cabinet, Rear Door)\")]\r\n    return shared, family, formulas\r\n\r\ndef set_value(fm, p, v):\r\n    if v is None: return\r\n    if isinstance(v, int): fm.Set(p, int(v))\r\n    else: fm.Set(p, float(v))\r\n\r\ndef build_parameters(fm):\r\n    shared, family, formulas = params_spec()\r\n    folder = os.path.dirname(doc.PathName) or r\"C:\\MDC\\Masters\"\r\n    sp_path = os.path.join(folder, \"MDC_SharedParameters.txt\")\r\n    if not os.path.exists(sp_path): open(sp_path, \"w\").close()\r\n    original = app.SharedParametersFilename\r\n    try:\r\n        app.SharedParametersFilename = sp_path\r\n        spfile = app.OpenSharedParameterFile()\r\n        group = spfile.Groups.get_Item(\"MDC Rack\") or spfile.Groups.Create(\"MDC Rack\")\r\n        for name, spec, grp, guid, val in shared:\r\n            if fm.get_Parameter(name): continue\r\n            ext = group.Definitions.get_Item(name)\r\n            if ext is None:\r\n                opts = ExternalDefinitionCreationOptions(name, spec)\r\n                opts.GUID = Guid(guid)\r\n                ext = group.Definitions.Create(opts)\r\n            set_value(fm, fm.AddParameter(ext, grp, False), val)\r\n    finally:\r\n        app.SharedParametersFilename = original\r\n    for name, spec, grp, val in family:\r\n        if fm.get_Parameter(name): continue\r\n        set_value(fm, fm.AddParameter(name, grp, spec, False), val)\r\n    for name, f in formulas:\r\n        fm.SetFormula(fm.get_Parameter(name), f)\r\n    for bip, text in [(BuiltInParameter.ALL_MODEL_MANUFACTURER, \"Midwest Design Creation\"),\r\n                      (BuiltInParameter.ALL_MODEL_URL, \"https://midwestdesigncreation.com\")]:\r\n        p = fm.get_Parameter(bip)\r\n        if p: fm.Set(p, text)\r\n    log.append(\"Parameters and formulas ready\")\r\n\r\n# ---------------------------------------------------------------- helpers\r\ndef find_view(vtype, name):\r\n    views = [v for v in FilteredElementCollector(doc).OfClass(View) if not v.IsTemplate and v.ViewType == vtype]\r\n    for v in views:\r\n        if v.Name == name: return v\r\n    return views[0]\r\n\r\ndef planes_by_name():\r\n    return dict((r.Name, r) for r in FilteredElementCollector(doc).OfClass(ReferencePlane))\r\n\r\ndef ref_type(name):\r\n    return Convert.ToInt32(getattr(FamilyInstanceReferenceType, name))\r\n\r\ndef plane_pos(rp, axis):\r\n    o = rp.GetPlane().Origin\r\n    return o.X if axis == \"x\" else (o.Y if axis == \"y\" else o.Z)\r\n\r\ndef face(ext, normal):\r\n    opt = Options(); opt.ComputeReferences = True\r\n    for g in ext.get_Geometry(opt):\r\n        if isinstance(g, Solid) and g.Faces.Size > 0:\r\n            for f in g.Faces:\r\n                if isinstance(f, PlanarFace) and f.FaceNormal.IsAlmostEqualTo(normal):\r\n                    return f\r\n    raise Exception(\"face not found\")\r\n\r\n# ---------------------------------------------------------------- build\r\nif not doc.IsFamilyDocument:\r\n    OUT = [\"Open a fresh family from Generic Model.rft first.\"]\r\nelif \"Left Post\" in planes_by_name():\r\n    OUT = [\"This family already has rack planes. Start from a fresh Generic Model family.\"]\r\nelse:\r\n    TransactionManager.Instance.EnsureInTransaction(doc)\r\n    try:\r\n        fm = doc.FamilyManager\r\n        doc.OwnerFamily.FamilyCategory = Category.GetCategory(doc, BuiltInCategory.OST_CommunicationDevices)\r\n        if fm.CurrentType is None: fm.NewType(\"Default\")\r\n        build_parameters(fm)\r\n\r\n        plan = find_view(ViewType.FloorPlan, \"Ref. Level\")\r\n        front = find_view(ViewType.Elevation, \"Front\")\r\n        level = FilteredElementCollector(doc).OfClass(Level).FirstElement()\r\n\r\n        # Reference planes\r\n        existing = planes_by_name()\r\n        R = {\"Center (Left/Right)\": existing[\"Center (Left/Right)\"], \"Center (Front/Back)\": existing[\"Center (Front/Back)\"]}\r\n        AX = {\"Center (Left/Right)\": \"x\", \"Center (Front/Back)\": \"y\", \"Ref. Level\": \"z\"}\r\n        CO = {\"Center (Left/Right)\": 0.0, \"Center (Front/Back)\": 0.0, \"Ref. Level\": 0.0}\r\n        big = 25.0\r\n        for name, axis, fn, isref in PLANES:\r\n            c = fn(DEFAULTS)\r\n            if axis == \"x\":\r\n                rp = doc.FamilyCreate.NewReferencePlane(XYZ(c, -big, 0), XYZ(c, big, 0), XYZ.BasisZ, plan)\r\n            elif axis == \"y\":\r\n                rp = doc.FamilyCreate.NewReferencePlane(XYZ(-big, c, 0), XYZ(big, c, 0), XYZ.BasisZ, plan)\r\n            else:\r\n                rp = doc.FamilyCreate.NewReferencePlane(XYZ(-big, 0, c), XYZ(big, 0, c), XYZ.BasisY, front)\r\n            rp.Name = name\r\n            try: rp.get_Parameter(BuiltInParameter.ELEM_REFERENCE_NAME).Set(ref_type(isref))\r\n            except Exception as e: log.append(\"Note: Is Reference not set on \" + name)\r\n            R[name] = rp; AX[name] = axis; CO[name] = c\r\n        log.append(\"Reference planes: %d\" % len(PLANES))\r\n        doc.Regenerate()\r\n\r\n        def ref(n): return level.GetPlaneReference() if n == \"Ref. Level\" else R[n].GetReference()\r\n\r\n        # Dimensions\r\n        for vname, names, axis, off, label, eq in DIMS:\r\n            ra = ReferenceArray()\r\n            for n in names: ra.Append(ref(n))\r\n            cs = [CO[n] for n in names]; lo, hi = min(cs), max(cs)\r\n            if axis == \"x\": line = Line.CreateBound(XYZ(lo, off, 0), XYZ(hi, off, 0))\r\n            elif axis == \"y\": line = Line.CreateBound(XYZ(off, lo, 0), XYZ(off, hi, 0))\r\n            else: line = Line.CreateBound(XYZ(off, 0, lo), XYZ(off, 0, hi))\r\n            try:\r\n                dim = doc.FamilyCreate.NewDimension(plan if vname == \"plan\" else front, line, ra)\r\n            except Exception as e:\r\n                raise Exception(\"Dimension %s (%s): %s\" % (\" / \".join(names), vname, e))\r\n            if eq: dim.AreSegmentsEqual = True\r\n            if label: dim.FamilyLabel = fm.get_Parameter(label)\r\n        log.append(\"Dimensions: %d (labeled and EQ)\" % len(DIMS))\r\n\r\n        # Clearance subcategory\r\n        cat = doc.OwnerFamily.FamilyCategory\r\n        sub = cat.SubCategories.get_Item(\"Clearance\") if cat.SubCategories.Contains(\"Clearance\") \\\r\n              else doc.Settings.Categories.NewSubcategory(cat, \"Clearance\")\r\n\r\n        # Boxes\r\n        sp = SketchPlane.Create(doc, level.Id)\r\n        E = {}\r\n        for name, l, r, f, b, topp, vis, subcat in BOXES:\r\n            x0, x1, y0, y1 = CO[l], CO[r], CO[f], CO[b]\r\n            pts = [XYZ(x0, y0, 0), XYZ(x1, y0, 0), XYZ(x1, y1, 0), XYZ(x0, y1, 0)]\r\n            loop = CurveArray()\r\n            for i in range(4): loop.Append(Line.CreateBound(pts[i], pts[(i + 1) % 4]))\r\n            prof = CurveArrArray(); prof.Append(loop)\r\n            topval = fm.CurrentType.AsDouble(fm.get_Parameter(topp))\r\n            ext = doc.FamilyCreate.NewExtrusion(True, prof, sp, topval)\r\n            doc.Regenerate()\r\n            for plane, normal in [(l, XYZ(-1, 0, 0)), (r, XYZ(1, 0, 0)), (f, XYZ(0, -1, 0)), (b, XYZ(0, 1, 0))]:\r\n                doc.FamilyCreate.NewAlignment(plan, ref(plane), face(ext, normal).Reference).IsLocked = True\r\n            fm.AssociateElementParameterToFamilyParameter(ext.get_Parameter(BuiltInParameter.EXTRUSION_END_PARAM), fm.get_Parameter(topp))\r\n            fm.AssociateElementParameterToFamilyParameter(ext.get_Parameter(BuiltInParameter.IS_VISIBLE_PARAM), fm.get_Parameter(vis))\r\n            if subcat: ext.Subcategory = sub\r\n            E[name] = (ext, l, r, f, b, topp)\r\n        log.append(\"Extrusions: %d, all sides locked\" % len(BOXES))\r\n\r\n        # Power connector on top of the cabinet body\r\n        try:\r\n            doc.Regenerate()\r\n            conn = ConnectorElement.CreateElectricalConnector(doc, ElectricalSystemType.PowerBalanced,\r\n                                                              face(E[\"Cabinet Body\"][0], XYZ.BasisZ).Reference)\r\n            for bip, pname in [(BuiltInParameter.RBS_ELEC_VOLTAGE, \"Voltage\"),\r\n                               (BuiltInParameter.RBS_ELEC_NUMBER_OF_POLES, \"Number of Poles\"),\r\n                               (BuiltInParameter.RBS_ELEC_APPARENT_LOAD, \"Apparent Load\")]:\r\n                fm.AssociateElementParameterToFamilyParameter(conn.get_Parameter(bip), fm.get_Parameter(pname))\r\n            log.append(\"Power connector added and associated\")\r\n        except Exception as e:\r\n            log.append(\"NOTE: connector not added automatically (\" + str(e) + \"); add it by hand\")\r\n\r\n        # Flex test (rolled back afterwards)\r\n        st = SubTransaction(doc); st.Start()\r\n        fails = []\r\n        try:\r\n            for k, v in FLEX.items(): set_value(fm, fm.get_Parameter(k), v)\r\n            doc.Regenerate()\r\n            exp = dict((n, fn(FLEX)) for n, a, fn, i in PLANES)\r\n            exp.update({\"Center (Left/Right)\": 0.0, \"Center (Front/Back)\": 0.0})\r\n            for n, a, fn, i in PLANES:\r\n                if abs(plane_pos(R[n], a) - exp[n]) > 1e-4: fails.append(\"plane \" + n)\r\n            for name, (ext, l, r, f, b, topp) in E.items():\r\n                bb = ext.get_BoundingBox(None)\r\n                want = [exp[l], exp[r], exp[f], exp[b], fm.CurrentType.AsDouble(fm.get_Parameter(topp))]\r\n                got = [bb.Min.X, bb.Max.X, bb.Min.Y, bb.Max.Y, bb.Max.Z]\r\n                if any(abs(a - b2) > 1e-4 for a, b2 in zip(got, want)): fails.append(\"box \" + name)\r\n        finally:\r\n            st.RollBack()\r\n        log.append(\"FLEX TEST PASSED: all planes and boxes followed\" if not fails\r\n                   else \"FLEX TEST FAILED: \" + \", \".join(fails))\r\n    except Exception as e:\r\n        log.append(\"ERROR: \" + str(e))\r\n    TransactionManager.Instance.TransactionTaskDone()\r\n    OUT = log",
+      "Engine": "CPython3",
+      "VariableInputPorts": true,
+      "Id": "e43f874d1adc4e30b453b32f3ea9535e",
+      "Inputs": [
+        {
+          "Id": "563ead3eeecf4bc2b3146b66c0ddce43",
+          "Name": "IN[0]",
+          "Description": "Input #0",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "c0bb64fef1124026826590afeea4a799",
+          "Name": "OUT",
+          "Description": "Result of the python script",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Runs an embedded Python script."
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Watch, CoreNodeModels",
+      "NodeType": "ExtensionNode",
+      "Id": "fc87403ca6e9410f883b630a61d41338",
+      "Inputs": [
+        {
+          "Id": "d5af1ce8c09848129c8a82a2c8754252",
+          "Name": "",
+          "Description": "Node to show output from",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "739e6cdc86b9450da644aee8d1c802e8",
+          "Name": "",
+          "Description": "Node output",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Visualize the node's output"
+    }
+  ],
+  "Connectors": [
+    {
+      "Start": "c0bb64fef1124026826590afeea4a799",
+      "End": "d5af1ce8c09848129c8a82a2c8754252",
+      "Id": "7d14fb226d0947e08ffcf0e61e84fc89",
+      "IsHidden": "False"
+    }
+  ],
+  "Dependencies": [],
+  "NodeLibraryDependencies": [],
+  "Thumbnail": "",
+  "GraphDocumentationURL": null,
+  "ExtensionWorkspaceData": [
+    {
+      "ExtensionGuid": "28992e1d-abb9-417f-8b1b-05e053bee670",
+      "Name": "Properties",
+      "Version": "2.13",
+      "Data": {}
+    },
+    {
+      "ExtensionGuid": "DFBD9CC0-DB40-457A-939E-8C8555555A9D",
+      "Name": "Generative Design",
+      "Version": "2.0",
+      "Data": {}
+    }
+  ],
+  "Author": "",
+  "Linting": {
+    "activeLinter": "None",
+    "activeLinterId": "7b75fb44-43fd-4631-a878-29f4d5d8399a",
+    "warningCount": 0,
+    "errorCount": 0
+  },
+  "Bindings": [],
+  "View": {
+    "Dynamo": {
+      "ScaleFactor": 1.0,
+      "HasRunWithoutCrash": true,
+      "IsVisibleInDynamoLibrary": true,
+      "Version": "2.13.1.3887",
+      "RunType": "Manual",
+      "RunPeriod": "1000"
+    },
+    "Camera": {
+      "Name": "Background Preview",
+      "EyeX": -17.0,
+      "EyeY": 24.0,
+      "EyeZ": 50.0,
+      "LookX": 12.0,
+      "LookY": -13.0,
+      "LookZ": -58.0,
+      "UpX": 0.0,
+      "UpY": 1.0,
+      "UpZ": 0.0
+    },
+    "ConnectorPins": [],
+    "NodeViews": [
+      {
+        "Id": "e43f874d1adc4e30b453b32f3ea9535e",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Name": "Python Script",
+        "ShowGeometry": true,
+        "Excluded": false,
+        "X": 480.5,
+        "Y": 275.0
+      },
+      {
+        "Id": "fc87403ca6e9410f883b630a61d41338",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Name": "Watch",
+        "ShowGeometry": true,
+        "Excluded": false,
+        "X": 822.5,
+        "Y": 106.0
+      }
+    ],
+    "Annotations": [],
+    "X": 0.0,
+    "Y": 0.0,
+    "Zoom": 1.0
+  }
+}
