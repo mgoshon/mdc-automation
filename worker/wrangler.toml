@@ -6,8 +6,20 @@ compatibility_date = "2026-09-01"
 APS_NICKNAME = "mdcdesign"
 APS_BUCKET = "mdc-automation-yourname"
 ALLOWED_ORIGIN = "https://midwestdesigncreation.com"
+# "true" = visitors need the access key (testing). "false" = open to the public.
+REQUIRE_ACCESS_KEY = "true"
+
+# Each visitor (IP address) can start at most 3 families per minute.
+[[ratelimits]]
+name = "GENERATE_LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 3
+  period = 60
 
 # Secrets (set with: npx wrangler secret put NAME)
 #   APS_CLIENT_ID
 #   APS_CLIENT_SECRET
-#   ACCESS_KEY   (private key for the test page while this is a proof of concept)
+#   ACCESS_KEY         (used while REQUIRE_ACCESS_KEY = "true")
+#   TURNSTILE_SECRET   (from Cloudflare Turnstile widget)

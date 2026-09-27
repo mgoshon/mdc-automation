@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Box family generator | Midwest Design Creation</title>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..700&display=swap" rel="stylesheet">
@@ -74,7 +75,10 @@
 
     <div class="field text"><label for="type">Type name</label><input id="type" type="text" maxlength="60" value="Equipment Box"></div>
     <div class="field text"><label for="key">Access key</label><input id="key" type="password" autocomplete="off">
-      <p class="hint">Required while the generator is in testing.</p></div>
+      <p class="hint">Only needed while the generator is in testing.</p></div>
+
+    <!-- Cloudflare Turnstile human check: replace YOUR-TURNSTILE-SITE-KEY with your widget's site key -->
+    <div class="cf-turnstile" data-sitekey="0x4AAAAAAFFegBeJBlQhIGX_" data-theme="light"></div>
 
     <button id="go" type="button">Generate family</button>
     <div id="status" class="status" role="status" aria-live="polite"></div>
@@ -93,7 +97,7 @@
 
 <script>
   // Set this to your deployed Worker URL.
-  const API_BASE = "https://mdc-automation-api.YOUR-SUBDOMAIN.workers.dev";
+  const API_BASE = "https://mdc-automation-api.mdgoshon.workers.dev";
 
   const $ = (id) => document.getElementById(id);
   const inputs = ["w", "d", "h", "type"].map($);
@@ -139,16 +143,18 @@
   $("go").addEventListener("click", async () => {
     const { w, d, h } = vals();
     if ([w, d, h].some(v => v < 1 || v > 240)) return setStatus("Each dimension must be between 1 and 240 inches.", "error");
-    if (!$("key").value) return setStatus("Enter the access key to generate a family.", "error");
+    const turnstileToken = window.turnstile ? turnstile.getResponse() : "";
+    if (!turnstileToken) return setStatus("Please complete the human check above the button.", "error");
 
-    const headers = { "Content-Type": "application/json", "X-MDC-Key": $("key").value };
+    const headers = { "Content-Type": "application/json" };
+    if ($("key").value) headers["X-MDC-Key"] = $("key").value;
     $("go").disabled = true; $("tb-status").textContent = "Building";
     setStatus("Sending to Revit in the cloud. This usually takes under a minute.");
 
     try {
       const res = await fetch(`${API_BASE}/api/generate`, {
         method: "POST", headers,
-        body: JSON.stringify({ widthIn: w, depthIn: d, heightIn: h, typeName: $("type").value }),
+        body: JSON.stringify({ widthIn: w, depthIn: d, heightIn: h, typeName: $("type").value, turnstileToken }),
       });
       const job = await res.json();
       if (!res.ok) throw new Error(job.error || "The job could not be started.");
@@ -160,7 +166,8 @@
         if (!sres.ok) throw new Error(st.error || "Status check failed.");
         if (st.status === "success") {
           $("tb-status").textContent = "Ready";
-          return setStatus(`Family ready. <a href="${st.downloadUrl}">Download the .rfa</a> (link expires in 30 minutes).`, "ok");
+          const name = st.fileName ? ` ${st.fileName}` : " the .rfa";
+          return setStatus(`Family ready. <a href="${st.downloadUrl}">Download${name}</a> (link expires in 30 minutes).`, "ok");
         }
         if (!["pending", "inprogress"].includes(st.status)) throw new Error("Revit could not build this family. Check the Worker logs for the job report.");
         setStatus(st.status === "pending" ? "Waiting for a Revit engine to start." : "Revit is building the family.");
@@ -171,6 +178,7 @@
       setStatus(err.message, "error");
     } finally {
       $("go").disabled = false;
+      if (window.turnstile) turnstile.reset(); // each check can only be used once
     }
   });
 </script>

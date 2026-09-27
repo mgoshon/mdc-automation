@@ -2,6 +2,8 @@
 //   POST /api/generate   { widthIn, depthIn, heightIn, typeName }  -> { jobId, resultKey }
 //   GET  /api/status?id=<jobId>&key=<resultKey>                     -> { status, downloadUrl? }
 // APS credentials stay here on the server; the browser never sees them.
+// Generate is protected by: optional access key, per-visitor rate limit, and Cloudflare Turnstile.
+// Status needs the unguessable job id + result key returned by generate.
 
 const APS = "https://developer.api.autodesk.com";
 const DA = `${APS}/da/us-east/v3`;
@@ -23,13 +25,28 @@ export default {
     const json = (body, status = 200) =>
       new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 
-    // Proof-of-concept gate. Every job costs APS usage, so keep this private until launch.
-    if (!env.ACCESS_KEY || request.headers.get("X-MDC-Key") !== env.ACCESS_KEY)
-      return json({ error: "Access key is missing or incorrect." }, 401);
-
     const url = new URL(request.url);
     try {
-      if (request.method === "POST" && url.pathname === "/api/generate") return json(await generate(request, env), 202);
+      if (request.method === "POST" && url.pathname === "/api/generate") {
+        // 1. Access key (on while REQUIRE_ACCESS_KEY is "true" in wrangler.toml)
+        if (env.REQUIRE_ACCESS_KEY !== "false" &&
+            (!env.ACCESS_KEY || request.headers.get("X-MDC-Key") !== env.ACCESS_KEY))
+          return json({ error: "Access key is missing or incorrect." }, 401);
+
+        // 2. Rate limit per visitor
+        const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+        if (env.GENERATE_LIMITER) {
+          const { success } = await env.GENERATE_LIMITER.limit({ key: ip });
+          if (!success) return json({ error: "Too many requests. Please wait a minute and try again." }, 429);
+        }
+
+        // 3. Human check (Cloudflare Turnstile)
+        const input = await request.json().catch(() => ({}));
+        if (!(await verifyTurnstile(input.turnstileToken, ip, env)))
+          return json({ error: "The human check did not pass. Please try again." }, 403);
+
+        return json(await generate(input, env), 202);
+      }
       if (request.method === "GET" && url.pathname === "/api/status") return json(await status(url, env));
       return json({ error: "Not found." }, 404);
     } catch (err) {
@@ -39,8 +56,7 @@ export default {
   },
 };
 
-async function generate(request, env) {
-  const input = await request.json().catch(() => ({}));
+async function generate(input, env) {
   const params = {
     widthIn: dim(input.widthIn, "Width"),
     depthIn: dim(input.depthIn, "Depth"),
@@ -99,6 +115,19 @@ function friendlyName(p) {
   const n = (v) => String(Number(v)); // 24 -> "24", 24.5 -> "24.5", 30 -> "30"
   const type = p.typeName.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "Box";
   return `MDC-${type}-${n(p.widthIn)}x${n(p.depthIn)}x${n(p.heightIn)}`;
+}
+
+async function verifyTurnstile(token, ip, env) {
+  if (!env.TURNSTILE_SECRET) throw fail(500, "The human check is not configured yet.");
+  if (!token || typeof token !== "string") return false;
+  const form = new FormData();
+  form.append("secret", env.TURNSTILE_SECRET);
+  form.append("response", token);
+  if (ip !== "unknown") form.append("remoteip", ip);
+  const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: form });
+  const out = await res.json().catch(() => ({}));
+  if (!out.success) console.log("Turnstile failed: " + JSON.stringify(out["error-codes"] || out));
+  return out.success === true;
 }
 
 function dim(value, label) {
