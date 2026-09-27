@@ -6,7 +6,8 @@
 const APS = "https://developer.api.autodesk.com";
 const DA = `${APS}/da/us-east/v3`;
 const TEMPLATE_KEY = "templates/generic-model.rft";
-const RESULT_KEY_PATTERN = /^results\/[0-9a-f-]{36}\.rfa$/;
+// results/<uuid>__<friendly name>.rfa  (the friendly name becomes the download file name)
+const RESULT_KEY_PATTERN = /^results\/[0-9a-f-]{36}__[A-Za-z0-9._-]{1,120}\.rfa$/;
 
 let cachedToken = null; // { value, expiresAt } per Worker isolate
 
@@ -48,7 +49,7 @@ async function generate(request, env) {
   };
 
   const token = await getToken(env);
-  const resultKey = `results/${crypto.randomUUID()}.rfa`;
+  const resultKey = `results/${crypto.randomUUID()}__${friendlyName(params)}.rfa`;
   const oss = (key) => `urn:adsk.objects:os.object:${env.APS_BUCKET}/${key}`;
   const auth = { Authorization: `Bearer ${token}` };
 
@@ -78,11 +79,26 @@ async function status(url, env) {
     return { status: wi.status };
   }
 
-  const dl = await apsJson(
-    token, "GET",
-    `${APS}/oss/v2/buckets/${env.APS_BUCKET}/objects/${encodeURIComponent(key)}/signeds3download?minutesExpiration=30`,
-  );
-  return { status: "success", downloadUrl: dl.url };
+  const fileName = key.split("__")[1];
+  const base = `${APS}/oss/v2/buckets/${env.APS_BUCKET}/objects/${encodeURIComponent(key)}/signeds3download?minutesExpiration=30`;
+  const disposition = encodeURIComponent(`attachment; filename="${fileName}"`);
+
+  // Ask Autodesk to serve the file with the friendly name; fall back to a plain link if that option is refused.
+  let dl;
+  try {
+    dl = await apsJson(token, "GET", `${base}&response-content-disposition=${disposition}`);
+  } catch (err) {
+    console.log("Named download link refused, using plain link: " + err.message);
+    dl = await apsJson(token, "GET", base);
+  }
+  return { status: "success", downloadUrl: dl.url, fileName };
+}
+
+// "Equipment Box", 24 x 18 x 60  ->  MDC-Equipment-Box-24x18x60
+function friendlyName(p) {
+  const n = (v) => String(Number(v)); // 24 -> "24", 24.5 -> "24.5", 30 -> "30"
+  const type = p.typeName.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "Box";
+  return `MDC-${type}-${n(p.widthIn)}x${n(p.depthIn)}x${n(p.heightIn)}`;
 }
 
 function dim(value, label) {
