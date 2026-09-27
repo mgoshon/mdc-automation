@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Box family generator | Midwest Design Creation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#E8ECEF; --sheet:#F6F8F9; --ink:#22303A; --steel:#5F6E7B;
+    --rule:#C2CBD3; --brass:#9C7639; --face-top:#FFFFFF; --face-l:#D3DAE0; --face-r:#A9B5BF;
+    --err:#9A2F2F; --ok:#2F6B43;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+       font-family:"Archivo",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.5}
+  .sheet{max-width:1080px;margin:32px auto;background:var(--sheet);border:1.5px solid var(--ink);
+         display:grid;grid-template-columns:minmax(280px,380px) 1fr;min-height:620px}
+  .form{padding:32px;border-right:1.5px solid var(--ink);display:flex;flex-direction:column;gap:20px}
+  h1{font-stretch:125%;font-weight:700;font-size:1.9rem;line-height:1.1;margin:0;letter-spacing:-.01em}
+  .lede{margin:0;color:var(--steel);max-width:34ch}
+  label{display:block;font-weight:600;font-size:.9rem;margin-bottom:4px}
+  .dims{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .field{position:relative}
+  input{width:100%;font:inherit;padding:10px 34px 10px 10px;border:1.5px solid var(--rule);background:#fff;color:var(--ink);border-radius:2px}
+  input:focus{outline:none;border-color:var(--ink);box-shadow:0 0 0 3px rgba(156,118,57,.35)}
+  .unit{position:absolute;right:10px;bottom:11px;color:var(--steel);font-size:.85rem;pointer-events:none}
+  .text input{padding-right:10px}
+  .hint{font-size:.82rem;color:var(--steel);margin-top:4px}
+  button{font:inherit;font-weight:600;font-stretch:112%;padding:13px 18px;border:1.5px solid var(--ink);
+         background:var(--ink);color:#fff;cursor:pointer;border-radius:2px}
+  button:hover{background:#34444f}
+  button:focus-visible{outline:3px solid var(--brass);outline-offset:2px}
+  button:disabled{opacity:.55;cursor:progress}
+  .status{min-height:3em;font-size:.95rem}
+  .status.error{color:var(--err)} .status.ok{color:var(--ok)}
+  .status a{color:var(--ink);font-weight:600}
+  .view{display:grid;grid-template-rows:1fr auto}
+  .canvas{display:flex;align-items:center;justify-content:center;padding:24px;
+          background-image:linear-gradient(#E1E6EA 1px,transparent 1px),linear-gradient(90deg,#E1E6EA 1px,transparent 1px);
+          background-size:24px 24px;background-position:-1px -1px;background-color:#fbfcfc}
+  svg{width:100%;max-width:560px;height:auto}
+  .dimtext{font:600 13px "Archivo",sans-serif;fill:var(--brass)}
+  /* Title block, like the corner of a drawing sheet */
+  .titleblock{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;border-top:1.5px solid var(--ink)}
+  .titleblock div{padding:10px 14px;border-left:1px solid var(--rule)}
+  .titleblock div:first-child{border-left:none}
+  .titleblock small{display:block;font-size:.72rem;color:var(--steel)}
+  .titleblock strong{font-stretch:112%;font-size:1rem}
+  @media (max-width:760px){
+    .sheet{grid-template-columns:1fr;margin:0;border-left:none;border-right:none}
+    .form{border-right:none;border-bottom:1.5px solid var(--ink);padding:24px}
+    .titleblock{grid-template-columns:1fr 1fr}
+    .titleblock div:nth-child(3){border-left:none}
+    .titleblock div:nth-child(n+3){border-top:1px solid var(--rule)}
+  }
+</style>
+</head>
+<body>
+<main class="sheet">
+  <section class="form" aria-labelledby="title">
+    <h1 id="title">Box family generator</h1>
+    <p class="lede">Enter a size and get a Revit 2025 Generic Model family, built in the cloud.</p>
+
+    <div class="dims">
+      <div class="field"><label for="w">Width</label><input id="w" type="number" min="1" max="240" step="0.5" value="24" inputmode="decimal"><span class="unit">in</span></div>
+      <div class="field"><label for="d">Depth</label><input id="d" type="number" min="1" max="240" step="0.5" value="30" inputmode="decimal"><span class="unit">in</span></div>
+      <div class="field"><label for="h">Height</label><input id="h" type="number" min="1" max="240" step="0.5" value="42" inputmode="decimal"><span class="unit">in</span></div>
+    </div>
+    <p class="hint" style="margin-top:-12px">Each dimension from 1 to 240 inches.</p>
+
+    <div class="field text"><label for="type">Type name</label><input id="type" type="text" maxlength="60" value="Equipment Box"></div>
+    <div class="field text"><label for="key">Access key</label><input id="key" type="password" autocomplete="off">
+      <p class="hint">Required while the generator is in testing.</p></div>
+
+    <button id="go" type="button">Generate family</button>
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+  </section>
+
+  <section class="view" aria-label="Preview">
+    <div class="canvas"><svg id="preview" viewBox="0 0 560 420" role="img" aria-label="Box preview"></svg></div>
+    <div class="titleblock">
+      <div><small>Family</small><strong id="tb-name">Equipment Box</strong></div>
+      <div><small>Size (W x D x H)</small><strong id="tb-size">24 x 30 x 42</strong></div>
+      <div><small>Category</small><strong>Generic Model</strong></div>
+      <div><small>Status</small><strong id="tb-status">Draft</strong></div>
+    </div>
+  </section>
+</main>
+
+<script>
+  // Set this to your deployed Worker URL.
+  const API_BASE = "https://mdc-automation-api.YOUR-SUBDOMAIN.workers.dev";
+
+  const $ = (id) => document.getElementById(id);
+  const inputs = ["w", "d", "h", "type"].map($);
+  const statusEl = $("status");
+
+  function setStatus(text, kind = "") { statusEl.className = "status " + kind; statusEl.innerHTML = text; }
+  function vals() { return { w: +$("w").value || 1, d: +$("d").value || 1, h: +$("h").value || 1 }; }
+
+  // Isometric preview: x = width, y = depth, z = height.
+  function draw() {
+    const { w, d, h } = vals();
+    const c = Math.cos(Math.PI / 6), s = Math.sin(Math.PI / 6);
+    const P = (x, y, z) => [(x - y) * c, (x + y) * s - z];
+    const faces = {
+      top:  [P(0,0,h), P(w,0,h), P(w,d,h), P(0,d,h)],
+      right:[P(w,0,0), P(w,d,0), P(w,d,h), P(w,0,h)],
+      left: [P(0,d,0), P(w,d,0), P(w,d,h), P(0,d,h)],
+    };
+    const pts = Object.values(faces).flat();
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+    const pad = 70, W = 560, H = 420;
+    const k = Math.min((W - pad * 2) / (maxX - minX), (H - pad * 2) / (maxY - minY));
+    const T = ([x, y]) => [(x - minX) * k + (W - (maxX - minX) * k) / 2, (y - minY) * k + (H - (maxY - minY) * k) / 2];
+    const poly = (f, fill) => `<polygon points="${f.map(T).map(p => p.join(",")).join(" ")}" fill="${fill}" stroke="#22303A" stroke-width="1.5" stroke-linejoin="round"/>`;
+    const mid = (a, b) => { const A = T(a), B = T(b); return [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2]; };
+    const label = (p, dx, dy, t, anchor) => `<text class="dimtext" x="${p[0] + dx}" y="${p[1] + dy}" text-anchor="${anchor}">${t}"</text>`;
+
+    $("preview").innerHTML =
+      poly(faces.top, "var(--face-top)") + poly(faces.left, "var(--face-l)") + poly(faces.right, "var(--face-r)") +
+      label(mid(P(0,d,0), P(w,d,0)), -8, 22, fmt(w), "end") +
+      label(mid(P(w,0,0), P(w,d,0)), 8, 22, fmt(d), "start") +
+      label(mid(P(w,0,0), P(w,0,h)), 12, 4, fmt(h), "start");
+
+    $("tb-size").textContent = `${fmt(w)} x ${fmt(d)} x ${fmt(h)}`;
+    $("tb-name").textContent = $("type").value.trim() || "Standard";
+  }
+  const fmt = (n) => String(Math.round(n * 100) / 100);
+
+  inputs.forEach(el => el.addEventListener("input", draw));
+  draw();
+
+  $("go").addEventListener("click", async () => {
+    const { w, d, h } = vals();
+    if ([w, d, h].some(v => v < 1 || v > 240)) return setStatus("Each dimension must be between 1 and 240 inches.", "error");
+    if (!$("key").value) return setStatus("Enter the access key to generate a family.", "error");
+
+    const headers = { "Content-Type": "application/json", "X-MDC-Key": $("key").value };
+    $("go").disabled = true; $("tb-status").textContent = "Building";
+    setStatus("Sending to Revit in the cloud. This usually takes under a minute.");
+
+    try {
+      const res = await fetch(`${API_BASE}/api/generate`, {
+        method: "POST", headers,
+        body: JSON.stringify({ widthIn: w, depthIn: d, heightIn: h, typeName: $("type").value }),
+      });
+      const job = await res.json();
+      if (!res.ok) throw new Error(job.error || "The job could not be started.");
+
+      for (let i = 0; i < 60; i++) {
+        await new Promise(r => setTimeout(r, 4000));
+        const sres = await fetch(`${API_BASE}/api/status?id=${job.jobId}&key=${encodeURIComponent(job.resultKey)}`, { headers });
+        const st = await sres.json();
+        if (!sres.ok) throw new Error(st.error || "Status check failed.");
+        if (st.status === "success") {
+          $("tb-status").textContent = "Ready";
+          return setStatus(`Family ready. <a href="${st.downloadUrl}">Download the .rfa</a> (link expires in 30 minutes).`, "ok");
+        }
+        if (!["pending", "inprogress"].includes(st.status)) throw new Error("Revit could not build this family. Check the Worker logs for the job report.");
+        setStatus(st.status === "pending" ? "Waiting for a Revit engine to start." : "Revit is building the family.");
+      }
+      throw new Error("The job is taking longer than expected. Try again in a few minutes.");
+    } catch (err) {
+      $("tb-status").textContent = "Failed";
+      setStatus(err.message, "error");
+    } finally {
+      $("go").disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

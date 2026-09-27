@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ApplicationPackage SchemaVersion="1.0"
+                    Name="MDCBoxFamily"
+                    Description="Generates a Generic Model box family from JSON inputs"
+                    Author="Midwest Design Creation"
+                    ProductCode="{A3D2C9E4-7F18-4C0B-8E6A-2B5D9F1C4A60}"
+                    AutodeskProduct="Revit"
+                    ProductType="Application">
+  <CompanyDetails Name="Midwest Design Creation" Url="https://midwestdesigncreation.com" />
+  <Components Description="MDC Box Family">
+    <RuntimeRequirements SeriesMin="R2025" SeriesMax="R2025" Platform="Revit" OS="Win64" />
+    <ComponentEntry AppName="MDCBoxFamily"
+                    ModuleName="./Contents/MDCBoxFamily.addin"
+                    AppDescription="Generates a Generic Model box family"
+                    LoadOnCommandInvocation="False"
+                    LoadOnRevitStartup="True" />
+  </Components>
+</ApplicationPackage>

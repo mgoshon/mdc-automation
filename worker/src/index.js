@@ -1,0 +1,123 @@
+// MDC Automation API (Cloudflare Worker)
+//   POST /api/generate   { widthIn, depthIn, heightIn, typeName }  -> { jobId, resultKey }
+//   GET  /api/status?id=<jobId>&key=<resultKey>                     -> { status, downloadUrl? }
+// APS credentials stay here on the server; the browser never sees them.
+
+const APS = "https://developer.api.autodesk.com";
+const DA = `${APS}/da/us-east/v3`;
+const TEMPLATE_KEY = "templates/generic-model.rft";
+const RESULT_KEY_PATTERN = /^results\/[0-9a-f-]{36}\.rfa$/;
+
+let cachedToken = null; // { value, expiresAt } per Worker isolate
+
+export default {
+  async fetch(request, env) {
+    const cors = {
+      "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN || "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, X-MDC-Key",
+    };
+    if (request.method === "OPTIONS") return new Response(null, { headers: cors });
+
+    const json = (body, status = 200) =>
+      new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
+
+    // Proof-of-concept gate. Every job costs APS usage, so keep this private until launch.
+    if (!env.ACCESS_KEY || request.headers.get("X-MDC-Key") !== env.ACCESS_KEY)
+      return json({ error: "Access key is missing or incorrect." }, 401);
+
+    const url = new URL(request.url);
+    try {
+      if (request.method === "POST" && url.pathname === "/api/generate") return json(await generate(request, env), 202);
+      if (request.method === "GET" && url.pathname === "/api/status") return json(await status(url, env));
+      return json({ error: "Not found." }, 404);
+    } catch (err) {
+      console.error(err);
+      return json({ error: err.publicMessage || "The request could not be completed." }, err.httpStatus || 500);
+    }
+  },
+};
+
+async function generate(request, env) {
+  const input = await request.json().catch(() => ({}));
+  const params = {
+    widthIn: dim(input.widthIn, "Width"),
+    depthIn: dim(input.depthIn, "Depth"),
+    heightIn: dim(input.heightIn, "Height"),
+    typeName: String(input.typeName || "Standard").replace(/[^A-Za-z0-9 _-]/g, "").trim().slice(0, 60) || "Standard",
+  };
+
+  const token = await getToken(env);
+  const resultKey = `results/${crypto.randomUUID()}.rfa`;
+  const oss = (key) => `urn:adsk.objects:os.object:${env.APS_BUCKET}/${key}`;
+  const auth = { Authorization: `Bearer ${token}` };
+
+  const wi = await apsJson(token, "POST", `${DA}/workitems`, {
+    activityId: `${env.APS_NICKNAME}.MDCBoxFamily+prod`,
+    limitProcessingTimeSec: 120, // safety net: stop any single job after 2 minutes
+    arguments: {
+      template: { url: oss(TEMPLATE_KEY), headers: auth },
+      params: { url: "data:application/json," + JSON.stringify(params) },
+      result: { verb: "put", url: oss(resultKey), headers: auth },
+    },
+  });
+
+  return { jobId: wi.id, resultKey, params };
+}
+
+async function status(url, env) {
+  const id = url.searchParams.get("id") || "";
+  const key = url.searchParams.get("key") || "";
+  if (!/^[0-9a-f]{32}$/i.test(id) || !RESULT_KEY_PATTERN.test(key)) throw fail(400, "Invalid job reference.");
+
+  const token = await getToken(env);
+  const wi = await apsJson(token, "GET", `${DA}/workitems/${id}`);
+
+  if (wi.status !== "success") {
+    if (!["pending", "inprogress"].includes(wi.status)) console.log(`Job ${id} ended as ${wi.status}: ${wi.reportUrl}`);
+    return { status: wi.status };
+  }
+
+  const dl = await apsJson(
+    token, "GET",
+    `${APS}/oss/v2/buckets/${env.APS_BUCKET}/objects/${encodeURIComponent(key)}/signeds3download?minutesExpiration=30`,
+  );
+  return { status: "success", downloadUrl: dl.url };
+}
+
+function dim(value, label) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 1 || n > 240) throw fail(400, `${label} must be between 1 and 240 inches.`);
+  return Math.round(n * 1000) / 1000;
+}
+
+async function getToken(env) {
+  if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) return cachedToken.value;
+  const res = await fetch(`${APS}/authentication/v2/token`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: "Basic " + btoa(`${env.APS_CLIENT_ID}:${env.APS_CLIENT_SECRET}`),
+    },
+    body: new URLSearchParams({ grant_type: "client_credentials", scope: "code:all data:read data:write" }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(`APS token failed (${res.status}): ${JSON.stringify(data)}`);
+  cachedToken = { value: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 };
+  return cachedToken.value;
+}
+
+async function apsJson(token, method, url, body) {
+  const res = await fetch(url, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(`APS ${method} ${url} failed (${res.status}): ${JSON.stringify(data)}`);
+  return data;
+}
+
+function fail(httpStatus, publicMessage) {
+  return Object.assign(new Error(publicMessage), { httpStatus, publicMessage });
+}

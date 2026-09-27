@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Revit 2025 add-in for the APS Automation API (Design Automation for Revit).
+       Revit 2025 runs on .NET 8, so this targets net8.0-windows. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>MDCBoxFamily</AssemblyName>
+    <RootNamespace>MDC.Automation</RootNamespace>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Revit API reference assemblies from NuGet, so the build does not depend on a local Revit install.
+         Runtime assets are excluded because the cloud engine supplies RevitAPI.dll. -->
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="2025.*" ExcludeAssets="runtime" PrivateAssets="all" />
+    <!-- Design Automation bridge (DesignAutomationReadyEvent). -->
+    <PackageReference Include="Autodesk.Forge.DesignAutomation.Revit" Version="2025.*" />
+  </ItemGroup>
+</Project>

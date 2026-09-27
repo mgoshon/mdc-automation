@@ -1,0 +1,12 @@
+{
+  "name": "mdc-automation-setup",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Deploys the MDC Box Family AppBundle and Activity to APS and runs test work items",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "deploy": "node deploy.js",
+    "test": "node test-workitem.js"
+  }
+}

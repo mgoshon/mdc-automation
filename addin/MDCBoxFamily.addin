@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="DBApplication">
+    <Name>MDC Box Family</Name>
+    <FullClassName>MDC.Automation.BoxFamilyApp</FullClassName>
+    <Assembly>.\MDCBoxFamily.dll</Assembly>
+    <AddInId>6E0B8C2A-4B1F-4E57-9C2D-6A3F1D8E5B71</AddInId>
+    <VendorId>MDCR</VendorId>
+    <VendorDescription>Midwest Design Creation, https://midwestdesigncreation.com</VendorDescription>
+  </AddIn>
+</RevitAddIns>

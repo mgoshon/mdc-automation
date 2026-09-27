@@ -1,0 +1,13 @@
+name = "mdc-automation-api"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+APS_NICKNAME = "mdcdesign"
+APS_BUCKET = "mdc-automation-yourname"
+ALLOWED_ORIGIN = "https://midwestdesigncreation.com"
+
+# Secrets (set with: npx wrangler secret put NAME)
+#   APS_CLIENT_ID
+#   APS_CLIENT_SECRET
+#   ACCESS_KEY   (private key for the test page while this is a proof of concept)

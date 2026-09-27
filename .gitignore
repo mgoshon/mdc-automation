@@ -1,0 +1,15 @@
+# Secrets (never upload)
+.env
+.dev.vars
+
+# Build output
+addin/bin/
+addin/obj/
+addin/dist/
+setup/out/
+
+# Tool folders
+node_modules/
+.wrangler/
+.vs/
+*.user
